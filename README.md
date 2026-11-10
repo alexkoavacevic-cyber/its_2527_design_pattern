@@ -54,6 +54,10 @@ Esempio di acquisto:
 curl -X POST localhost:3000/orders -H 'content-type: application/json' -d '{"eventId":"e-1","seats":[{"seatId":"A-1-1"}],"card":"4242424242424242","holderName":"Giulia Rossi","email":"giulia@example.com"}'
 ```
 
+## Fornitore dei pagamenti
+
+Il fornitore si sceglie all'avvio con la variabile `PAYMENT_PROVIDER`: `alpha` oppure `beta`. Se la variabile non c'è, si usa AlphaPay.
+
 ## Carte di prova AlphaPay
 
 | Carta | Esito |
@@ -61,6 +65,13 @@ curl -X POST localhost:3000/orders -H 'content-type: application/json' -d '{"eve
 | 4242424242424242 | Addebito riuscito |
 | 4000000000000002 | Addebito rifiutato |
 | 4000000000000119 | La prima chiamata va in timeout |
+
+## Token di prova BetaPayments
+
+| Token | Esito |
+|---|---|
+| tok_ok | Pagamento approvato |
+| tok_refuse | Pagamento rifiutato |
 
 ## Regole per l'AI
 

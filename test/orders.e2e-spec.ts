@@ -1,7 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { MailerService } from '../src/notifications/mailer.service';
-import { createApp, DECLINED_CARD, GOOD_CARD, SLOW_CARD } from './helpers';
+import {
+  BETA_OK_TOKEN,
+  BETA_REFUSE_TOKEN,
+  createApp,
+  DECLINED_CARD,
+  GOOD_CARD,
+  SLOW_CARD,
+} from './helpers';
 
 // NB: l'inventario dei posti non si azzera tra un test e l'altro,
 // quindi ogni test usa posti diversi.
@@ -26,7 +33,7 @@ describe('Ordini', () => {
     const res = await buy({ eventId: 'e-1', seats: [{ seatId: 'A-1-1' }] }).expect(201);
     expect(res.body.order.total).toBe(62.63);
     expect(res.body.order.status).toBe('paid');
-    expect(res.body.order.alphaChargeId).toMatch(/^ch_\d{6}$/);
+    expect(res.body.order.paymentId).toMatch(/^ch_\d{6}$/);
     expect(res.body.tickets).toHaveLength(1);
     expect(res.body.tickets[0].price).toBe(62.63);
     expect(res.body.tickets[0].code).toMatch(/^TH\|t-1\|\d{2}$/);
@@ -57,7 +64,7 @@ describe('Ordini', () => {
   it('non addebita nulla per un evento gratuito', async () => {
     const res = await buy({ eventId: 'e-3', seats: [{ seatId: 'PIT', quantity: 1 }] }).expect(201);
     expect(res.body.order.total).toBe(0);
-    expect(res.body.order.alphaChargeId).toBeNull();
+    expect(res.body.order.paymentId).toBeNull();
   });
 
   it('rifiuta un evento che non è in vendita', async () => {
@@ -92,5 +99,44 @@ describe('Ordini', () => {
     const second = await createApp();
     await request(second.getHttpServer()).post('/orders').send(order).expect(201);
     await second.close();
+  });
+});
+
+describe('Ordini con BetaPayments', () => {
+  let app: INestApplication;
+
+  beforeEach(async () => {
+    app = await createApp('beta');
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  function buy(body: Record<string, unknown>) {
+    return request(app.getHttpServer())
+      .post('/orders')
+      .send({ card: BETA_OK_TOKEN, holderName: 'Giulia Rossi', email: 'giulia@example.com', ...body });
+  }
+
+  it('vende un posto in platea per e-2 e lo paga con Beta', async () => {
+    const res = await buy({ eventId: 'e-2', seats: [{ seatId: 'PLATEA-1-1' }] }).expect(201);
+    expect(res.body.order.total).toBe(50.4);
+    expect(res.body.order.status).toBe('paid');
+    expect(res.body.order.paymentId).toMatch(/^BP-/);
+    expect(res.body.tickets).toHaveLength(1);
+  });
+
+  it('risponde 402 se Beta rifiuta e lascia il posto libero', async () => {
+    await buy({ eventId: 'e-2', seats: [{ seatId: 'PLATEA-1-2' }], card: BETA_REFUSE_TOKEN }).expect(402);
+    await buy({ eventId: 'e-2', seats: [{ seatId: 'PLATEA-1-2' }] }).expect(201);
+  });
+
+  it('annulla un ordine pagato con Beta e rimborsa con Beta', async () => {
+    const bought = await buy({ eventId: 'e-2', seats: [{ seatId: 'PLATEA-1-3' }] }).expect(201);
+    expect(bought.body.order.paymentId).toMatch(/^BP-/);
+    const cancelled = await request(app.getHttpServer()).post(`/orders/${bought.body.order.id}/cancel`).expect(201);
+    expect(cancelled.body.order.status).toBe('refunded');
+    await buy({ eventId: 'e-2', seats: [{ seatId: 'PLATEA-1-3' }] }).expect(201);
   });
 });
